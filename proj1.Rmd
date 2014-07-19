@@ -1,0 +1,60 @@
+---
+title: "Predicting Weightlifting Error Types"
+output: html_document
+---
+Using data from http://groupware.les.inf.puc-rio.br/har, a training set and a testing set were downloaded.  Using the training set data, a model was developed to predict the classe variable based on the other variables in a row.  When this model is applied to the testing set, the type of error (type of classe) shown in the data can be determined with >99% accuracy.
+
+First, required packages are loaded into R, and a master seed is set.
+```{r}
+require(caret);require(e1071);require(MASS);require(doParallel);require(randomForest)
+set.seed(298)
+```
+The data are loaded as follows, removing from both sets the first 7 columns (containing data not relevant to the computation of the model).
+```{r}
+trn<-read.csv("pml-training.csv",stringsAsFactors=TRUE)
+tst<-read.csv("pml-testing.csv",stringsAsFactors=TRUE)
+trn<-trn[-c(1:7)]
+tst<-tst[-c(1:7)]
+```
+Columns containing NAs and those with near-zero variance in the training set were removed from both sets, as well as NAs in the testing set.
+```{r}
+nas<-NULL;for(i in 1:153){nas[i]<-ifelse(sum(is.na(trn[,i]))>0,0,i)}
+trn<-trn[nas]
+tst<-tst[nas]
+for(i in 1:20){for(j in 1:86){if(is.na(tst[i,j])==T){tst[i,j]<-""}}}
+nzv<-nearZeroVar(trn)
+trn<-trn[-nzv]
+tst<-tst[-nzv]
+```
+30% of the training set was split into a seperate validation set.
+```{r}
+ptn<-createDataPartition(trn$classe,p=0.7,list=FALSE)
+vdn<-trn[-ptn,]
+trn<-trn[ptn,]
+```
+Next, a random forest-ased model was computed, taking advantage of parallel processing.
+```{r,cache=TRUE}
+crs<-detectCores()
+csr<-makeCluster(crs)
+registerDoParallel(csr)
+tft<-train(classe ~.,data=trn,method="rf",
+  trControl=trainControl(method='cv',number = 5,verboseIter=TRUE,
+  allowParallel = TRUE)) 
+stopCluster(csr)
+```
+The in-sample accuracy was evaluated and shown to be 100% (as expected).
+```{r}
+inp<-predict(tft,trn)
+print(confusionMatrix(inp,trn$classe))
+```
+The out-of-sample accuracy was evaluated and shown to be 99%.
+```{r}
+otp<-predict(tft,vdn)
+print(confusionMatrix(otp,vdn$classe))
+```
+Finally, the model was applied to the testing set.  These results were submitted to Coursera and scored 20/20.
+```{r}
+prd<-predict(tft,newdata=tst)
+print(prd)
+```
+In conclusion, it has been shown that the classe within the testing set can be predicted accurately using a random forest model based on the training data.
